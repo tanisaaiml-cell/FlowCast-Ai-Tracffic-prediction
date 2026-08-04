@@ -3,11 +3,28 @@ services:
     name: flowcast-dashboard
     runtime: python
     plan: free
+
     buildCommand: pip install -r requirements.txt
+
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
     healthCheckPath: /api/health
+
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
-      - key: ALLOWED_ORIGINS
-        value: https://flowcast-dashboard.onrender.com
+
+      - key: FLOWCAST_LATITUDE
+        value: "22.5726"
+
+      - key: FLOWCAST_LONGITUDE
+        value: "88.3639"
+
+      - key: MAX_UPLOAD_ROWS
+        value: "200000"
+
+      - key: BATCH_CHUNK_SIZE
+        value: "25000"
+
+      - key: OPEN_METEO_TIMEOUT_SECONDS
+        value: "8"
