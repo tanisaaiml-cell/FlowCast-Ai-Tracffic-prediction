@@ -83,31 +83,6 @@ model_artifacts/
 └── registry.json
 ```
 
-Edit `model_artifacts/registry.json`:
-
-```json
-{
-  "model_version": "flowcast-2026.1",
-  "feature_order": [
-    "speed_kmh", "volume", "occupancy", "temp_c", "rain_mm",
-    "visibility_km", "event_flag", "distance_km", "hour",
-    "day_of_week", "is_weekend", "month", "sin_hour", "cos_hour"
-  ],
-  "models": {
-    "volume": "volume_model.joblib",
-    "travel_time": "travel_time_model.joblib",
-    "congestion": "congestion_model.joblib",
-    "accident_risk": "accident_risk_model.joblib"
-  },
-  "metrics": {
-    "traffic_volume": {"mae": 0, "rmse": 0, "r2": 0},
-    "travel_time": {"mae": 0, "rmse": 0, "r2": 0},
-    "congestion": {"accuracy": 0, "f1_macro": 0},
-    "accident_risk": {"accuracy": 0, "f1": 0, "roc_auc": 0}
-  }
-}
-```
-
 Important rules:
 
 - Save the complete preprocessing pipeline whenever possible, not only the estimator.
@@ -218,16 +193,4 @@ FLOWCAST_LATITUDE=22.5726
 FLOWCAST_LONGITUDE=88.3639
 ```
 
-## 10. Portfolio proof checklist
 
-Before showing the project:
-
-- Replace demo model artifacts with your trained models.
-- Replace demo metrics with your test-set metrics.
-- Run the benchmark and save the result.
-- Upload a CSV containing at least one intentionally invalid row and show the quarantine output.
-- Inspect prediction lineage from Live Forecast.
-- Export one HTML report.
-- Deploy the GitHub repository and add screenshots plus the live link to the README.
-
-See `docs/REQUIREMENT_MAPPING.md` for exact coverage of FR-13 to FR-18, non-functional targets and user roles.
