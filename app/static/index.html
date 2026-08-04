@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="FlowCast AI-powered traffic prediction and analytics dashboard" />
+  <title>FlowCast | Smart Traffic Intelligence</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script defer type="module" src="/static/js/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">FC</div>
+        <div>
+          <h1>FlowCast</h1>
+          <span>Traffic Intelligence</span>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Dashboard navigation">
+        <button class="nav-item active" data-view="overview" data-roles="traffic_analyst,incident_coordinator,transport_planner,system_owner">
+          <span class="nav-icon">◫</span><span>Overview</span>
+        </button>
+        <button class="nav-item" data-view="live" data-roles="traffic_analyst,incident_coordinator,system_owner">
+          <span class="nav-icon">⌁</span><span>Live Forecast</span>
+        </button>
+        <button class="nav-item" data-view="historical" data-roles="traffic_analyst,transport_planner,system_owner">
+          <span class="nav-icon">↗</span><span>Historical Trends</span>
+        </button>
+        <button class="nav-item" data-view="weather" data-roles="traffic_analyst,transport_planner,system_owner">
+          <span class="nav-icon">☂</span><span>Weather Impact</span>
+        </button>
+        <button class="nav-item" data-view="model" data-roles="system_owner">
+          <span class="nav-icon">⌘</span><span>Model Insights</span>
+        </button>
+        <button class="nav-item" data-view="upload" data-roles="system_owner">
+          <span class="nav-icon">⇧</span><span>Upload & Predict</span>
+        </button>
+        <button class="nav-item" data-view="alerts" data-roles="traffic_analyst,incident_coordinator,system_owner">
+          <span class="nav-icon">!</span><span>Alerts</span><span id="alertCount" class="badge">0</span>
+        </button>
+        <button class="nav-item" data-view="reports" data-roles="traffic_analyst,transport_planner,system_owner">
+          <span class="nav-icon">▤</span><span>Reports</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-status">
+        <div class="status-dot"></div>
+        <div>
+          <strong>API connected</strong>
+          <span id="apiStatus">Checking…</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button id="menuButton" class="menu-button" aria-label="Toggle menu">☰</button>
+        <div>
+          <p class="eyebrow">CORRIDOR OPERATIONS CENTRE</p>
+          <h2 id="pageTitle">Operations Overview</h2>
+        </div>
+        <div class="topbar-actions">
+          <div class="live-pill"><span></span> Live system</div>
+          <label class="role-select-wrap">
+            <span>Working as</span>
+            <select id="roleSelect">
+              <option value="traffic_analyst">Traffic Operations Analyst</option>
+              <option value="incident_coordinator">Incident Response Coordinator</option>
+              <option value="transport_planner">Transport Planner</option>
+              <option value="system_owner">System Owner / Reviewer</option>
+            </select>
+          </label>
+          <button id="refreshButton" class="icon-button" title="Refresh current view">↻</button>
+        </div>
+      </header>
+
+      <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+      <section class="role-banner" id="roleBanner">
+        <div>
+          <span class="role-kicker">ROLE WORKSPACE</span>
+          <strong id="roleGoal">Anticipate congestion and act before it forms.</strong>
+        </div>
+        <span id="modelModePill" class="mode-pill">Loading model…</span>
+      </section>
+
+      <!-- OVERVIEW -->
+      <section class="view active" id="view-overview">
+        <div class="section-heading">
+          <div>
+            <h3>Network pulse</h3>
+            <p>Current operating condition across all monitored road segments.</p>
+          </div>
+          <select id="overviewWindow" class="compact-select">
+            <option value="12">Last 12 hours</option>
+            <option value="24" selected>Last 24 hours</option>
+            <option value="72">Last 3 days</option>
+            <option value="168">Last 7 days</option>
+          </select>
+        </div>
+
+        <div class="kpi-grid">
+          <article class="kpi-card"><span>Average speed</span><strong id="kpiSpeed">—</strong><small>km/h</small></article>
+          <article class="kpi-card"><span>Forecast volume</span><strong id="kpiVolume">—</strong><small>vehicles / interval</small></article>
+          <article class="kpi-card"><span>Travel time</span><strong id="kpiTravel">—</strong><small>minutes average</small></article>
+          <article class="kpi-card danger"><span>High-risk segments</span><strong id="kpiRisk">—</strong><small>next forecast window</small></article>
+          <article class="kpi-card"><span>Severe congestion</span><strong id="kpiSevere">—</strong><small>share of observations</small></article>
+          <article class="kpi-card"><span>Active segments</span><strong id="kpiSegments">—</strong><small>reporting normally</small></article>
+        </div>
+
+        <div class="dashboard-grid two-thirds">
+          <article class="panel">
+            <div class="panel-head"><div><h4>Traffic forecast trend</h4><p>Predicted volume and travel time</p></div></div>
+            <div class="chart-wrap large"><canvas id="overviewTrendChart"></canvas></div>
+          </article>
+          <article class="panel weather-card">
+            <div class="panel-head"><div><h4>Live weather</h4><p>Open-Meteo integration</p></div></div>
+            <div class="weather-main"><strong id="weatherTemperature">—</strong><span>°C</span></div>
+            <div class="weather-grid">
+              <div><span>Rain</span><strong id="weatherRain">—</strong></div>
+              <div><span>Visibility</span><strong id="weatherVisibility">—</strong></div>
+              <div><span>Wind</span><strong id="weatherWind">—</strong></div>
+              <div><span>Source</span><strong id="weatherSource">—</strong></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head"><div><h4>Segment status</h4><p>Latest predicted conditions with full lineage</p></div></div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Segment</th><th>Speed</th><th>Volume</th><th>Travel</th><th>Congestion</th><th>Accident risk</th><th>Model</th></tr></thead>
+              <tbody id="overviewSegmentTable"><tr><td colspan="7" class="loading-cell">Loading segments…</td></tr></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- LIVE -->
+      <section class="view" id="view-live">
+        <div class="section-heading">
+          <div><h3>Near-term segment forecast</h3><p>Interactive 30–180 minute forecast for corridor operations.</p></div>
+          <div class="filter-row">
+            <select id="liveSegment" class="compact-select"><option value="all">All segments</option></select>
+            <select id="forecastHorizon" class="compact-select">
+              <option value="30">30 minutes</option><option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">120 minutes</option><option value="180">180 minutes</option>
+            </select>
+            <button id="runForecastButton" class="primary-button">Run forecast</button>
+          </div>
+        </div>
+        <div class="dashboard-grid two-thirds">
+          <article class="panel"><div class="panel-head"><div><h4>Forecast by segment</h4><p>Volume through the selected horizon</p></div></div><div class="chart-wrap large"><canvas id="liveForecastChart"></canvas></div></article>
+          <article class="panel"><div class="panel-head"><div><h4>Risk distribution</h4><p>Accident-risk categories</p></div></div><div class="chart-wrap"><canvas id="riskChart"></canvas></div></article>
+        </div>
+        <article class="panel">
+          <div class="panel-head"><div><h4>Forecast records</h4><p>Every prediction includes confidence, model version and input hash.</p></div></div>
+          <div class="table-scroll"><table><thead><tr><th>Time</th><th>Segment</th><th>Volume</th><th>Travel</th><th>Congestion</th><th>Risk</th><th>Confidence</th><th>Lineage</th></tr></thead><tbody id="liveForecastTable"></tbody></table></div>
+        </article>
+      </section>
+
+      <!-- HISTORICAL -->
+      <section class="view" id="view-historical">
+        <div class="section-heading">
+          <div><h3>Historical traffic analytics</h3><p>Trend, congestion heatmap and road comparison in one view.</p></div>
+          <div class="filter-row">
+            <input id="historyStart" type="date" class="date-input" />
+            <input id="historyEnd" type="date" class="date-input" />
+            <select id="historySegment" class="compact-select"><option value="all">All segments</option></select>
+            <button id="applyHistoryButton" class="primary-button">Apply</button>
+          </div>
+        </div>
+        <article class="panel"><div class="panel-head"><div><h4>Speed and travel-time trend</h4><p>Observed and predicted corridor behaviour</p></div></div><div class="chart-wrap large"><canvas id="historicalChart"></canvas></div></article>
+        <div class="dashboard-grid equal">
+          <article class="panel"><div class="panel-head"><div><h4>Congestion heatmap</h4><p>Average severity by segment and hour</p></div></div><div id="heatmapGrid" class="heatmap-grid"></div><div class="heatmap-legend"><span>Low</span><i class="heat-1"></i><i class="heat-2"></i><i class="heat-3"></i><i class="heat-4"></i><span>Severe</span></div></article>
+          <article class="panel"><div class="panel-head"><div><h4>Road comparison</h4><p>Average predicted travel time</p></div></div><div class="chart-wrap"><canvas id="roadComparisonChart"></canvas></div></article>
+        </div>
+      </section>
+
+      <!-- WEATHER -->
+      <section class="view" id="view-weather">
+        <div class="section-heading"><div><h3>Weather vs traffic</h3><p>Understand how rain and visibility change corridor performance.</p></div><button id="refreshWeatherImpact" class="secondary-button">Refresh analysis</button></div>
+        <div class="dashboard-grid equal">
+          <article class="panel"><div class="panel-head"><div><h4>Rain intensity impact</h4><p>Travel time and accident risk by weather bucket</p></div></div><div class="chart-wrap large"><canvas id="weatherImpactChart"></canvas></div></article>
+          <article class="panel"><div class="panel-head"><div><h4>Correlation summary</h4><p>Relationship with rain amount</p></div></div><div id="correlationCards" class="correlation-list"></div></article>
+        </div>
+      </section>
+
+      <!-- MODEL -->
+      <section class="view" id="view-model">
+        <div class="section-heading"><div><h3>Model performance and transparency</h3><p>Metrics, feature importance, forecast horizons and artifact status.</p></div><span id="modelVersionLabel" class="version-tag">—</span></div>
+        <div id="metricCards" class="kpi-grid model-kpis"></div>
+        <div class="dashboard-grid equal">
+          <article class="panel"><div class="panel-head"><div><h4>Feature importance</h4><p>Relative contribution to model decisions</p></div></div><div class="chart-wrap large"><canvas id="featureImportanceChart"></canvas></div></article>
+          <article class="panel"><div class="panel-head"><div><h4>Forecast diagnostics</h4><p>Loaded artifacts and reproducibility information</p></div></div><div id="modelDiagnostics" class="diagnostic-list"></div></article>
+        </div>
+      </section>
+
+      <!-- UPLOAD -->
+      <section class="view" id="view-upload">
+        <div class="section-heading"><div><h3>Upload new data and predict</h3><p>Chunked validation, bad-row quarantine, batch inference and downloadable results.</p></div><a class="secondary-button" href="/static/sample_upload.csv" download>Download sample CSV</a></div>
+        <article class="panel upload-panel">
+          <form id="uploadForm">
+            <label class="drop-zone" id="dropZone">
+              <input id="csvFile" type="file" accept=".csv,text/csv" hidden />
+              <span class="drop-icon">⇧</span>
+              <strong>Drop your CSV here or click to browse</strong>
+              <small>Required: datetime, segment_id, speed_kmh, volume, occupancy, temp_c, rain_mm, visibility_km, event_flag</small>
+              <em id="selectedFileName">No file selected</em>
+            </label>
+            <button id="uploadPredictButton" class="primary-button wide" type="submit">Validate and run prediction</button>
+          </form>
+          <div id="uploadProgress" class="progress-wrap hidden"><div class="progress-bar"><span></span></div><p>Processing chunks and generating lineage…</p></div>
+        </article>
+        <div id="uploadResult" class="hidden">
+          <div class="kpi-grid" id="uploadStats"></div>
+          <article class="panel"><div class="panel-head"><div><h4>Prediction preview</h4><p>First 100 valid records</p></div><div id="uploadDownloads" class="filter-row"></div></div><div class="table-scroll"><table><thead><tr><th>Datetime</th><th>Segment</th><th>Volume</th><th>Travel</th><th>Congestion</th><th>Risk</th><th>Confidence</th></tr></thead><tbody id="uploadPreviewTable"></tbody></table></div></article>
+        </div>
+      </section>
+
+      <!-- ALERTS -->
+      <section class="view" id="view-alerts">
+        <div class="section-heading"><div><h3>Operational alert centre</h3><p>Ranked congestion and accident-risk alerts for proactive response.</p></div><button id="refreshAlertsButton" class="secondary-button">Refresh alerts</button></div>
+        <div id="alertsList" class="alerts-list"><div class="empty-state">Loading alerts…</div></div>
+      </section>
+
+      <!-- REPORTS -->
+      <section class="view" id="view-reports">
+        <div class="section-heading"><div><h3>Export insights and reports</h3><p>Create a portable summary for any selected time range.</p></div></div>
+        <article class="panel report-builder">
+          <div class="report-icon">▤</div>
+          <div><h4>FlowCast analytics report</h4><p>Includes road comparison, average speed, volume, travel time, risk and weather correlations.</p></div>
+          <div class="report-controls">
+            <label>Start<input id="reportStart" type="date" class="date-input" /></label>
+            <label>End<input id="reportEnd" type="date" class="date-input" /></label>
+            <button id="downloadCsvReport" class="secondary-button">Export CSV</button>
+            <button id="downloadHtmlReport" class="primary-button">Export HTML</button>
+          </div>
+        </article>
+        <article class="panel"><div class="panel-head"><div><h4>Recent batch runs</h4><p>Trace data source, model version, timing and result files.</p></div></div><div class="table-scroll"><table><thead><tr><th>Created</th><th>Source</th><th>Rows</th><th>Valid</th><th>Invalid</th><th>Time</th><th>Model</th><th>Export</th></tr></thead><tbody id="runsTable"></tbody></table></div></article>
+      </section>
+    </main>
+  </div>
+
+  <div id="lineageModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lineageTitle">
+    <div class="modal-card">
+      <button id="closeModal" class="modal-close">×</button>
+      <h3 id="lineageTitle">Prediction lineage</h3>
+      <div id="lineageContent" class="lineage-content"></div>
+    </div>
+  </div>
+</body>
+</html>

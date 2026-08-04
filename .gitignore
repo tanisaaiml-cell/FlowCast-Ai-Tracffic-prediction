@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+logs/*.log
+data/flowcast.db
+data/exports/*.csv
+data/quarantine/*.csv
+.DS_Store
+.vscode/
+Thumbs.db
+data/uploads/

@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "project": "FlowCast",
+  "version": "1.0.0",
+  "serving_strategy": "hybrid",
+  "primary_artifact": "flowcast_tabular_bundle.joblib",
+  "models": {
+    "traffic_volume": {
+      "task": "regression",
+      "serving_role": "primary",
+      "input_mode": "single_window",
+      "algorithm": "XGBoost",
+      "artifact": "flowcast_tabular_bundle.joblib",
+      "target": "target_traffic_volume",
+      "metrics": {
+        "mae": 40.89290249622968,
+        "rmse": 62.88515703049788,
+        "r2": 0.9516266572316884
+      }
+    },
+    "travel_time": {
+      "task": "regression",
+      "serving_role": "primary",
+      "input_mode": "single_window",
+      "algorithm": "XGBoost",
+      "artifact": "flowcast_tabular_bundle.joblib",
+      "target": "target_travel_time",
+      "metrics": {
+        "mae": 0.4303599175584976,
+        "rmse": 1.0554948171807848,
+        "r2": 0.8257337112563159
+      }
+    },
+    "congestion": {
+      "task": "classification",
+      "serving_role": "primary",
+      "input_mode": "single_window",
+      "algorithm": "XGBoost",
+      "artifact": "flowcast_tabular_bundle.joblib",
+      "target": "target_congestion_level",
+      "metrics": {
+        "accuracy": 0.8540869327501367,
+        "balanced_accuracy": 0.7839397832396419,
+        "f1_macro": 0.7551261905025147
+      }
+    },
+    "accident_risk": {
+      "task": "classification",
+      "serving_role": "primary",
+      "input_mode": "single_window",
+      "algorithm": "Random Forest",
+      "artifact": "flowcast_tabular_bundle.joblib",
+      "target": "target_accident_risk",
+      "metrics": {
+        "accuracy": 0.9904114365411436,
+        "balanced_accuracy": 0.5,
+        "f1_macro": 0.4975913112025926,
+        "roc_auc": null
+      }
+    },
+    "traffic_volume_lstm": {
+      "task": "sequence_regression",
+      "serving_role": "secondary",
+      "input_mode": "12_consecutive_windows",
+      "algorithm": "LSTM",
+      "artifact": "flowcast_traffic_lstm.keras",
+      "feature_scaler": "lstm_feature_scaler.joblib",
+      "target_scaler": "lstm_target_scaler.joblib",
+      "metadata": "lstm_metadata.joblib",
+      "sequence_length": 12,
+      "window_minutes": 30,
+      "forecast_horizon_minutes": 30,
+      "metrics": {
+        "mae": 48.722293,
+        "rmse": 78.479567,
+        "r2": 0.923899
+      }
+    }
+  }
+}

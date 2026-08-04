@@ -1,0 +1,4 @@
+datetime,segment_id,segment_name,speed_kmh,volume,occupancy,temp_c,rain_mm,visibility_km,event_flag,distance_km
+2026-07-31T09:00:00Z,SEG-01,North Gate to Central Square,28.5,940,0.71,30.2,0.0,9.5,0,1.9
+2026-07-31T09:30:00Z,SEG-02,Central Square to River Bridge,21.2,1120,0.84,30.6,1.2,7.8,0,2.3
+2026-07-31T10:00:00Z,SEG-03,River Bridge to Tech Park,35.8,730,0.52,31.1,0.0,10.2,1,3.1
