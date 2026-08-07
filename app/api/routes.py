@@ -30,29 +30,60 @@ router = APIRouter(prefix="/api")
 
 ROLE_CAPABILITIES = {
     "traffic_analyst": {
-        "label": "Traffic Operations Analyst",
-        "default_view": "overview",
-        "views": ["overview", "live", "historical", "weather", "alerts", "reports"],
-        "goal": "Anticipate congestion and act before it forms.",
-    },
+    "label": "Traffic Operations Analyst",
+    "default_view": "overview",
+    "views": [
+        "overview",
+        "live",
+        "historical",
+        "map",
+        "weather",
+        "alerts",
+        "reports",
+    ],
+    "goal": "Anticipate congestion and act before it forms.",
+},
     "incident_coordinator": {
-        "label": "Incident Response Coordinator",
-        "default_view": "alerts",
-        "views": ["overview", "live", "alerts"],
-        "goal": "Position patrols where risk is rising.",
-    },
+    "label": "Incident Response Coordinator",
+    "default_view": "alerts",
+    "views": [
+        "overview",
+        "live",
+        "map",
+        "alerts",
+    ],
+    "goal": "Position patrols where risk is rising.",
+},
     "transport_planner": {
-        "label": "Transport Planner",
-        "default_view": "historical",
-        "views": ["overview", "historical", "weather", "reports"],
-        "goal": "Make evidence-based infrastructure decisions.",
+    "label": "Transport Planner",
+    "default_view": "historical",
+    "views": [
+        "overview",
+        "historical",
+        "map",
+        "weather",
+        "reports",
+    ],
+    "goal": "Make evidence-based infrastructure decisions.",
     },
-    "system_owner": {
-        "label": "System Owner / Reviewer",
-        "default_view": "model",
-        "views": ["overview", "live", "historical", "weather", "model", "upload", "alerts", "reports"],
-        "goal": "Trust and audit the model.",
-    },
+   "system_owner": {
+    "label": "System Owner / Reviewer",
+    "default_view": "model",
+    "views": [
+        "overview",
+        "live",
+        "historical",
+        "map",
+        "weather",
+        "model",
+        "upload",
+        "alerts",
+        "reports",
+    ],
+    "goal": "Trust and audit the model.",
+},
+
+  
 }
 
 
@@ -137,6 +168,47 @@ def analytics_heatmap(start: str | None = None, end: str | None = None) -> dict:
 def analytics_road_comparison(start: str | None = None, end: str | None = None) -> dict:
     return {"roads": road_comparison(start, end)}
 
+@router.get("/map/traffic")
+def traffic_map() -> dict:
+    """Return the latest traffic condition for every road segment."""
+
+    frame = query_df(
+        """
+        SELECT
+            traffic.segment_id,
+            traffic.segment_name,
+            traffic.latitude,
+            traffic.longitude,
+            traffic.distance_km,
+            traffic.datetime,
+            traffic.speed_kmh,
+            traffic.volume,
+            traffic.occupancy,
+            traffic.predicted_volume,
+            traffic.predicted_travel_time,
+            traffic.predicted_congestion,
+            traffic.predicted_accident_risk,
+            traffic.model_version
+        FROM traffic_observations AS traffic
+
+        INNER JOIN (
+            SELECT
+                segment_id,
+                MAX(datetime) AS latest_datetime
+            FROM traffic_observations
+            GROUP BY segment_id
+        ) AS latest
+            ON traffic.segment_id = latest.segment_id
+            AND traffic.datetime = latest.latest_datetime
+
+        ORDER BY traffic.segment_id
+        """
+    )
+
+    return {
+        "segments": frame.to_dict(orient="records"),
+        "total_segments": int(len(frame)),
+    }
 
 @router.get("/analytics/weather-impact")
 def analytics_weather_impact(start: str | None = None, end: str | None = None) -> dict:
@@ -168,8 +240,97 @@ async def weather_current(
     longitude: float = Query(default=DEFAULT_LONGITUDE, ge=-180, le=180),
 ) -> dict:
     return await get_current_weather(latitude, longitude)
+@router.get("/reports/summary")
+def report_summary(
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    conditions: list[str] = []
+    parameters: list[str] = []
 
+    if start:
+        conditions.append("date(datetime) >= date(?)")
+        parameters.append(start)
 
+    if end:
+        conditions.append("date(datetime) <= date(?)")
+        parameters.append(end)
+
+    where_clause = ""
+
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+    summary_frame = query_df(
+        f"""
+        SELECT
+            COUNT(*) AS total_records,
+            COUNT(DISTINCT segment_id) AS total_segments,
+            COALESCE(
+                ROUND(AVG(predicted_volume), 2),
+                0
+            ) AS average_volume,
+            COALESCE(
+                ROUND(AVG(predicted_travel_time), 2),
+                0
+            ) AS average_travel_time,
+            COALESCE(
+                ROUND(AVG(predicted_accident_risk) * 100, 2),
+                0
+            ) AS average_accident_risk
+        FROM traffic_observations
+        {where_clause}
+        """,
+        tuple(parameters),
+    )
+
+    congestion_frame = query_df(
+        f"""
+        SELECT
+            predicted_congestion AS congestion,
+            COUNT(*) AS count
+        FROM traffic_observations
+        {where_clause}
+        GROUP BY predicted_congestion
+        ORDER BY count DESC
+        """,
+        tuple(parameters),
+    )
+
+    if summary_frame.empty:
+        summary = {
+            "total_records": 0,
+            "total_segments": 0,
+            "average_volume": 0,
+            "average_travel_time": 0,
+            "average_accident_risk": 0,
+        }
+    else:
+        row = summary_frame.iloc[0]
+
+        summary = {
+            "total_records": int(row["total_records"] or 0),
+            "total_segments": int(row["total_segments"] or 0),
+            "average_volume": float(row["average_volume"] or 0),
+            "average_travel_time": float(
+                row["average_travel_time"] or 0
+            ),
+            "average_accident_risk": float(
+                row["average_accident_risk"] or 0
+            ),
+        }
+
+    return {
+        "summary": summary,
+        "congestion_distribution": congestion_frame.to_dict(
+            orient="records"
+        ),
+        "selected_range": {
+            "start": start,
+            "end": end,
+        },
+    }
+    
 @router.get("/reports/export")
 def export_report(
     format: str = Query(default="csv", pattern="^(csv|html)$"),
