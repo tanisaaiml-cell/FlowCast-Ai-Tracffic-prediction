@@ -182,10 +182,16 @@ def _seed_demo_data(conn: sqlite3.Connection) -> None:
     )
 
 
-def query_df(sql: str, params: tuple | list = ()) -> pd.DataFrame:
-    """Run a query and return a DataFrame."""
+def query_df(
+    query: str,
+    parameters: tuple | list | None = None,
+) -> pd.DataFrame:
     with connection() as conn:
-        return pd.read_sql_query(sql, conn, params=params)
+        return pd.read_sql_query(
+            query,
+            conn,
+            params=parameters or (),
+        )
 
 
 def execute(sql: str, params: tuple | list = ()) -> None:

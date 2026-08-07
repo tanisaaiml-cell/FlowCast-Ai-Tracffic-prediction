@@ -1,5 +1,6 @@
 const API = "/api";
-
+let trafficMap = null;
+let trafficMapLayer = null;
 const state = {
   metadata: null,
   role: localStorage.getItem("flowcast-role") || "traffic_analyst",
@@ -12,6 +13,7 @@ const pageTitles = {
   overview: "Operations Overview",
   live: "Live Traffic Forecast",
   historical: "Historical Analytics",
+  map: "Interactive Traffic Map",
   weather: "Weather Impact Analysis",
   model: "Model Transparency",
   upload: "Batch Prediction Studio",
@@ -124,9 +126,15 @@ async function loadView(view) {
     if (view === "overview") await loadOverview();
     if (view === "live") await loadLiveForecast();
     if (view === "historical") await loadHistorical();
+    if (view === "map") await loadTrafficMap();
     if (view === "weather") await loadWeatherImpact();
     if (view === "model") await loadModelDiagnostics();
-    if (view === "alerts") await loadAlerts();
+    if (view === "reports") {
+  await Promise.all([
+    loadReportSummary(),
+    loadRuns(),
+  ]);
+}
     if (view === "reports") await loadRuns();
   } catch (error) {
     toast(error.message, "error");
@@ -154,10 +162,22 @@ function bindEvents() {
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
   $("#menuButton").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   $("#refreshButton").addEventListener("click", () => loadView(state.activeView));
-  $("#roleSelect").addEventListener("change", (event) => applyRole(event.target.value));
+  $("#roleSelect").addEventListener(
+  "change",
+  (event) => {
+    const selectedRole =
+      event.target.value;
+
+    applyRole(selectedRole);
+  }
+);
   $("#overviewWindow").addEventListener("change", loadOverview);
   $("#runForecastButton").addEventListener("click", loadLiveForecast);
   $("#applyHistoryButton").addEventListener("click", loadHistorical);
+  $("#refreshMapButton").addEventListener(
+  "click",
+  () => loadTrafficMap(true)
+);
   $("#refreshWeatherImpact").addEventListener("click", loadWeatherImpact);
   $("#refreshAlertsButton").addEventListener("click", () => loadAlerts(true));
   $("#uploadForm").addEventListener("submit", uploadCsv);
@@ -177,6 +197,10 @@ function bindEvents() {
       $("#selectedFileName").textContent = file.name;
     }
   });
+  $("#loadReportButton").addEventListener(
+  "click",
+  () => loadReportSummary(true)
+);
   $("#downloadCsvReport").addEventListener("click", () => downloadReport("csv"));
   $("#downloadHtmlReport").addEventListener("click", () => downloadReport("html"));
   $("#closeModal").addEventListener("click", () => $("#lineageModal").classList.add("hidden"));
@@ -184,20 +208,59 @@ function bindEvents() {
     if (event.target === $("#lineageModal")) $("#lineageModal").classList.add("hidden");
   });
 }
-
 function applyRole(role) {
+  console.log("applyRole received:", role);
+  const roleInfo =
+    state.metadata?.roles?.[role];
+
+  if (!roleInfo) {
+    console.error(
+      "Unknown FlowCast role:",
+      role
+    );
+    return;
+  }
+
+  // Update application state
   state.role = role;
-  localStorage.setItem("flowcast-role", role);
+
+  // Remember selected role
+  localStorage.setItem(
+    "flowcast-role",
+    role
+  );
+
+  // Keep dropdown synchronized
   $("#roleSelect").value = role;
-  const roleInfo = state.metadata?.roles?.[role];
-  if (!roleInfo) return;
-  $("#roleGoal").textContent = roleInfo.goal;
+
+  // Update role workspace text
+  $("#roleGoal").textContent =
+    roleInfo.goal;
+
+  // Show only views permitted for this role
   $$(".nav-item").forEach((button) => {
-    const allowedRoles = button.dataset.roles.split(",");
-    button.style.display = allowedRoles.includes(role) ? "flex" : "none";
+    const view = button.dataset.view;
+
+    const isAllowed =
+      roleInfo.views.includes(view);
+
+    button.style.display =
+      isAllowed ? "flex" : "none";
   });
-  if (!roleInfo.views.includes(state.activeView)) showView(roleInfo.default_view);
+
+  // If current page isn't allowed,
+  // move to role's default page.
+  if (
+    !roleInfo.views.includes(
+      state.activeView
+    )
+  ) {
+    showView(
+      roleInfo.default_view
+    );
+  }
 }
+
 
 function populateSegments(segments) {
   ["#liveSegment", "#historySegment"].forEach((selector) => {
@@ -413,6 +476,263 @@ function renderRoadComparison(rows) {
   });
 }
 
+function mapCongestionColor(level) {
+  const congestion = String(level || "Low").toLowerCase();
+
+  if (congestion === "severe") {
+    return "#ff667d";
+  }
+
+  if (
+    congestion === "heavy" ||
+    congestion === "high"
+  ) {
+    return "#f6b84a";
+  }
+
+  if (congestion === "moderate") {
+    return "#4aa9ff";
+  }
+
+  return "#53e0c2";
+}
+
+
+function initializeTrafficMap() {
+  if (trafficMap) {
+    return;
+  }
+
+  const Leaflet = window.L;
+
+  if (!Leaflet) {
+    throw new Error(
+      "Map library could not be loaded. Check your internet connection."
+    );
+  }
+
+  trafficMap = Leaflet.map("trafficMap", {
+    zoomControl: true,
+  }).setView(
+    [22.5726, 88.3639],
+    12
+  );
+
+  Leaflet.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      maxZoom: 19,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">' +
+        "OpenStreetMap contributors</a>",
+    }
+  ).addTo(trafficMap);
+
+  trafficMapLayer = Leaflet
+    .layerGroup()
+    .addTo(trafficMap);
+}
+
+
+async function loadTrafficMap(showToast = false) {
+  initializeTrafficMap();
+
+  const payload = await apiFetch("/map/traffic");
+  const segments = payload.segments || [];
+
+  trafficMapLayer.clearLayers();
+
+  if (!segments.length) {
+    $("#selectedMapSegment").innerHTML = `
+      <strong>No map data available</strong>
+      <p>
+        Upload traffic data or check the traffic-observations
+        database.
+      </p>
+    `;
+
+    trafficMap.invalidateSize();
+    return;
+  }
+
+  const Leaflet = window.L;
+  const markerBounds = [];
+
+  segments.forEach((segment) => {
+    const latitude = Number(segment.latitude);
+    const longitude = Number(segment.longitude);
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude)
+    ) {
+      return;
+    }
+
+    const congestion =
+      segment.predicted_congestion || "Low";
+
+    const markerColor =
+      mapCongestionColor(congestion);
+
+    const marker = Leaflet.circleMarker(
+      [latitude, longitude],
+      {
+        radius: 10,
+        color: markerColor,
+        fillColor: markerColor,
+        fillOpacity: 0.82,
+        weight: 3,
+      }
+    );
+
+    marker.bindTooltip(
+      `${escapeHtml(segment.segment_id)} · ` +
+      `${escapeHtml(congestion)}`,
+      {
+        direction: "top",
+        offset: [0, -8],
+      }
+    );
+
+    marker.bindPopup(`
+      <div>
+        <strong>
+          ${escapeHtml(segment.segment_name)}
+        </strong>
+
+        <br>
+        Segment:
+        ${escapeHtml(segment.segment_id)}
+
+        <br>
+        Speed:
+        ${safeNumber(segment.speed_kmh)} km/h
+
+        <br>
+        Current volume:
+        ${Math.round(
+          Number(segment.volume || 0)
+        ).toLocaleString()}
+
+        <br>
+        Predicted volume:
+        ${Math.round(
+          Number(segment.predicted_volume || 0)
+        ).toLocaleString()}
+
+        <br>
+        Travel time:
+        ${safeNumber(
+          segment.predicted_travel_time
+        )} min
+
+        <br>
+        Congestion:
+        ${escapeHtml(congestion)}
+
+        <br>
+        Accident risk:
+        ${formatPercent(
+          segment.predicted_accident_risk
+        )}
+      </div>
+    `);
+
+    marker.on("click", () => {
+      renderSelectedMapSegment(segment);
+    });
+
+    marker.addTo(trafficMapLayer);
+
+    markerBounds.push([
+      latitude,
+      longitude,
+    ]);
+  });
+
+  if (markerBounds.length === 1) {
+    trafficMap.setView(
+      markerBounds[0],
+      14
+    );
+  } else if (markerBounds.length > 1) {
+    trafficMap.fitBounds(
+      markerBounds,
+      {
+        padding: [35, 35],
+        maxZoom: 14,
+      }
+    );
+  }
+
+  setTimeout(() => {
+    trafficMap.invalidateSize();
+  }, 150);
+
+  if (showToast) {
+    toast(
+      `Traffic map refreshed: ${markerBounds.length} segments.`
+    );
+  }
+}
+
+
+function renderSelectedMapSegment(segment) {
+  $("#selectedMapSegment").innerHTML = `
+    <strong>
+      ${escapeHtml(segment.segment_name)}
+    </strong>
+
+    <p>
+      Segment:
+      ${escapeHtml(segment.segment_id)}
+      <br>
+
+      Latest observation:
+      ${formatTime(segment.datetime)}
+      <br>
+
+      Speed:
+      ${safeNumber(segment.speed_kmh)} km/h
+      <br>
+
+      Occupancy:
+      ${formatPercent(segment.occupancy)}
+      <br>
+
+      Predicted volume:
+      ${Math.round(
+        Number(segment.predicted_volume || 0)
+      ).toLocaleString()}
+      <br>
+
+      Travel time:
+      ${safeNumber(
+        segment.predicted_travel_time
+      )} min
+      <br>
+
+      Congestion:
+      ${escapeHtml(
+        segment.predicted_congestion || "Unknown"
+      )}
+      <br>
+
+      Accident risk:
+      ${formatPercent(
+        segment.predicted_accident_risk
+      )}
+      <br>
+
+      Model version:
+      ${escapeHtml(
+        segment.model_version || "Unknown"
+      )}
+    </p>
+  `;
+}
+
 async function loadWeatherImpact() {
   const query = dateQuery("history");
   const payload = await apiFetch(`/analytics/weather-impact?${query}`);
@@ -445,22 +765,207 @@ function renderWeatherImpact(rows) {
 
 async function loadModelDiagnostics() {
   const payload = await apiFetch("/model/diagnostics");
-  $("#modelVersionLabel").textContent = payload.model_version;
+
+  // Model version
+  $("#modelVersionLabel").textContent =
+    payload.model_version || "Unknown";
+
+  // Model mode
+  $("#modelModeLabel").textContent =
+    payload.mode_label ||
+    payload.mode ||
+    "Unknown mode";
+
+  // Performance metrics
   const metrics = payload.metrics || {};
   const metricEntries = [];
-  Object.entries(metrics).forEach(([model, values]) => Object.entries(values).forEach(([metric, value]) => metricEntries.push({ model, metric, value })));
-  $("#metricCards").innerHTML = metricEntries.slice(0, 8).map((item) => `
-    <article class="kpi-card"><span>${escapeHtml(item.model.replaceAll("_", " "))}</span><strong>${typeof item.value === "number" ? safeNumber(item.value, 3) : escapeHtml(item.value)}</strong><small>${escapeHtml(item.metric.toUpperCase())}</small></article>`).join("") || `<article class="kpi-card"><span>Artifact mode</span><strong>${escapeHtml(payload.mode)}</strong><small>Add trained model files to replace demo mode</small></article>`;
 
-  renderFeatureImportance(payload.feature_importance || []);
+  Object.entries(metrics).forEach(
+    ([model, values]) => {
+      Object.entries(values || {}).forEach(
+        ([metric, value]) => {
+          metricEntries.push({
+            model,
+            metric,
+            value,
+          });
+        }
+      );
+    }
+  );
+
+  $("#metricCards").innerHTML =
+    metricEntries.length
+      ? metricEntries
+          .slice(0, 8)
+          .map(
+            (item) => `
+              <article class="kpi-card">
+                <span>
+                  ${escapeHtml(
+                    item.model.replaceAll("_", " ")
+                  )}
+                </span>
+
+                <strong>
+                  ${
+                    typeof item.value === "number"
+                      ? safeNumber(item.value, 3)
+                      : escapeHtml(item.value)
+                  }
+                </strong>
+
+                <small>
+                  ${escapeHtml(
+                    item.metric.toUpperCase()
+                  )}
+                </small>
+              </article>
+            `
+          )
+          .join("")
+      : `
+          <article class="kpi-card">
+            <span>Execution mode</span>
+            <strong>
+              ${escapeHtml(
+                payload.mode_label ||
+                payload.mode ||
+                "Unknown"
+              )}
+            </strong>
+            <small>Model runtime information</small>
+          </article>
+        `;
+
+  // Feature importance
+  renderFeatureImportance(
+    payload.feature_importance || []
+  );
+
+  // Diagnostics
   const diagnostics = {
-    "Execution mode": payload.mode,
-    "Loaded models": (payload.loaded_models || []).join(", ") || "None — deterministic demo adapter active",
-    "Forecast horizons": `${(payload.forecast_horizons_minutes || []).join(", ")} minutes`,
-    "Random seed": payload.seed,
-    "Lineage": "Input hash + model version + run ID + timestamp",
+    "Execution mode":
+      payload.mode_label ||
+      payload.mode ||
+      "Unknown",
+
+    "Loaded models":
+      (payload.loaded_models || []).join(", ") ||
+      "No trained artifacts loaded",
+
+    "Expected models":
+      (payload.expected_models || []).join(", ") ||
+      "Not specified",
+
+    "Forecast horizons":
+      (payload.forecast_horizons_minutes || [])
+        .map((value) => `${value} min`)
+        .join(", ") ||
+      "Not specified",
+
+    "Random seed":
+      payload.seed ?? "Not specified",
   };
-  $("#modelDiagnostics").innerHTML = Object.entries(diagnostics).map(([key, value]) => `<div class="diagnostic-item"><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+
+  $("#modelDiagnostics").innerHTML =
+    Object.entries(diagnostics)
+      .map(
+        ([key, value]) => `
+          <div class="diagnostic-item">
+            <span>${escapeHtml(key)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `
+      )
+      .join("");
+
+  // Input features
+  const features =
+    payload.feature_order || [];
+
+  $("#modelFeatureList").innerHTML =
+    features.length
+      ? features
+          .map(
+            (feature) => `
+              <span class="model-info-tag">
+                ${escapeHtml(feature)}
+              </span>
+            `
+          )
+          .join("")
+      : `
+          <span class="model-info-placeholder">
+            Feature information is not available.
+          </span>
+        `;
+
+  // Prediction targets
+  const targets =
+    payload.prediction_targets || [];
+
+  $("#modelTargetList").innerHTML =
+    targets.length
+      ? targets
+          .map(
+            (target) => `
+              <span class="model-info-tag">
+                ${escapeHtml(target)}
+              </span>
+            `
+          )
+          .join("")
+      : `
+          <span class="model-info-placeholder">
+            Prediction targets are not available.
+          </span>
+        `;
+
+  // Prediction lineage
+  const lineage =
+    payload.lineage_fields || [];
+
+  $("#modelLineageList").innerHTML =
+    lineage.length
+      ? lineage
+          .map(
+            (field) => `
+              <span class="model-info-tag">
+                ${escapeHtml(field)}
+              </span>
+            `
+          )
+          .join("")
+      : `
+          <span class="model-info-placeholder">
+            Lineage information is not available.
+          </span>
+        `;
+
+  // Notes
+  $("#modelNotes").textContent =
+    payload.notes ||
+    "No additional model notes are available.";
+
+  // Limitations
+  const limitations =
+    payload.limitations || [];
+
+  $("#modelLimitationsList").innerHTML =
+    limitations.length
+      ? limitations
+          .map(
+            (item) => `
+              <li>${escapeHtml(item)}</li>
+            `
+          )
+          .join("")
+      : `
+          <li>
+            No model limitations are currently listed.
+          </li>
+        `;
 }
 
 function renderFeatureImportance(rows) {
@@ -526,6 +1031,139 @@ async function loadAlerts(showToast = false) {
     catch (error) { toast(error.message, "error"); }
   }));
   if (showToast) toast(`Alert centre refreshed: ${alerts.length} active.`);
+}
+
+async function loadReportSummary(showToast = false) {
+  const query = dateQuery("report");
+
+  try {
+    const payload = await apiFetch(
+      `/reports/summary?${query}`
+    );
+
+    const summary = payload.summary || {};
+
+    $("#reportTotalRecords").textContent =
+      Number(
+        summary.total_records || 0
+      ).toLocaleString();
+
+    $("#reportTotalSegments").textContent =
+      Number(
+        summary.total_segments || 0
+      ).toLocaleString();
+
+    $("#reportAverageVolume").textContent =
+      Number(
+        summary.average_volume || 0
+      ).toLocaleString(undefined, {
+        maximumFractionDigits: 1,
+      });
+
+    $("#reportAverageTravelTime").textContent =
+      safeNumber(
+        summary.average_travel_time,
+        1
+      );
+
+    $("#reportAverageRisk").textContent =
+      `${safeNumber(
+        summary.average_accident_risk,
+        1
+      )}%`;
+
+    renderReportCongestionChart(
+      payload.congestion_distribution || []
+    );
+
+    if (showToast) {
+      toast("Report summary loaded successfully.");
+    }
+  } catch (error) {
+    console.error(
+      "Report summary error:",
+      error
+    );
+
+    toast(
+      `Unable to load report: ${error.message}`,
+      "error"
+    );
+  }
+}
+
+
+function renderReportCongestionChart(rows) {
+  destroyChart("reportCongestion");
+
+  const colors = chartColors();
+
+  const congestionColors = {
+    low: colors.teal,
+    moderate: colors.yellow,
+    heavy: "#ff965b",
+    high: colors.red,
+    severe: colors.red,
+    unknown: colors.purple,
+  };
+
+  const labels = rows.map(
+    (row) => row.congestion || "Unknown"
+  );
+
+  const values = rows.map(
+    (row) => Number(row.count || 0)
+  );
+
+  const backgroundColors = labels.map(
+    (label) =>
+      congestionColors[
+        String(label).toLowerCase()
+      ] || colors.purple
+  );
+
+  state.charts.reportCongestion = new Chart(
+    $("#reportCongestionChart"),
+    {
+      type: "doughnut",
+
+      data: {
+        labels,
+        datasets: [
+          {
+            data: values,
+            backgroundColor: backgroundColors,
+            borderWidth: 0,
+          },
+        ],
+      },
+
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "68%",
+
+        plugins: {
+          legend: {
+            position: "bottom",
+
+            labels: {
+              color: colors.text,
+              usePointStyle: true,
+              boxWidth: 12,
+            },
+          },
+
+          tooltip: {
+            backgroundColor: "#071525",
+            borderColor:
+              "rgba(149,179,211,.25)",
+            borderWidth: 1,
+          },
+        },
+      },
+    }
+  );
 }
 
 function downloadReport(format) {

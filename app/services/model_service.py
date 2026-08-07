@@ -1045,6 +1045,82 @@ class ModelService:
             },
             index=data.index,
         )
+        
+    def diagnostics(self) -> dict[str, Any]:
+            """Return model-performance and transparency information."""
+
+            mode = (
+            "demo_fallback"
+            if self.using_demo_fallback
+            else "loaded_artifacts"
+            )
+
+            mode_label = (
+            "Deterministic demonstration model"
+            if self.using_demo_fallback
+            else "Trained model artifacts"
+         )
+
+            return {
+            "model_version": self.model_version,
+            "mode": mode,
+            "mode_label": mode_label,
+            "loaded_models": sorted(self.models.keys()),
+            "expected_models": sorted(
+                (self.registry.get("models", {}) or {}).keys()
+            ),
+            "prediction_targets": [
+                "Traffic volume",
+                "Travel time",
+                "Congestion level",
+                "Accident risk",
+            ],
+            "metrics": self.registry.get("metrics", {}),
+            "feature_importance": self.registry.get(
+                "feature_importance",
+                [],
+            ),
+            "feature_order": self.registry.get(
+                "feature_order",
+                [],
+            ),
+            "forecast_horizons_minutes": self.registry.get(
+                "forecast_horizons_minutes",
+                [30, 60, 90],
+            ),
+            "seed": RANDOM_SEED,
+            "lineage_fields": [
+                "prediction_id",
+                "run_id",
+                "input_hash",
+                "model_version",
+                "source",
+                "created_at",
+            ],
+            "notes": self.registry.get(
+                "notes",
+                "No additional model notes are available.",
+            ),
+            "limitations": [
+                (
+                    "The current prototype uses a synthetic "
+                    "metropolitan traffic dataset."
+                ),
+                (
+                    "Accident-risk probabilities require "
+                    "additional calibration and validation."
+                ),
+                (
+                    "Near-term predictions depend on the latest "
+                    "available traffic observation."
+                ),
+                (
+                    "SQLite data on free cloud hosting is not "
+                    "guaranteed to persist after a restart."
+                ),
+            ],
+        }
+    
 
     @staticmethod
     def _classification_confidence(
@@ -1460,60 +1536,8 @@ class ModelService:
     # -----------------------------------------------------
     # Diagnostics
     # -----------------------------------------------------
-
-    def diagnostics(self) -> dict[str, Any]:
-        model_configs = self.registry.get(
-            "models",
-            {},
-        )
-
-        metrics = {}
-
-        if isinstance(model_configs, dict):
-            metrics = {
-                model_name: config.get(
-                    "metrics",
-                    {},
-                )
-                for model_name, config in (
-                    model_configs.items()
-                )
-                if isinstance(config, dict)
-            }
-
-        return {
-            "model_version": self.model_version,
-
-            "serving_strategy": (
-                self.registry.get(
-                    "serving_strategy",
-                    "unknown",
-                )
-            ),
-
-            "mode": (
-                "demo_fallback"
-                if self.using_demo_fallback
-                else "loaded_artifacts"
-            ),
-
-            "loaded_models": sorted(
-                self.models.keys()
-            ),
-
-            "metrics": metrics,
-
-            "load_errors": self.load_errors,
-
-            "forecast_horizons_minutes": (
-                self.registry.get(
-                    "forecast_horizons_minutes",
-                    [30, 60, 90],
-                )
-            ),
-
-            "seed": RANDOM_SEED,
-        }
+        
+       
 
     # -----------------------------------------------------
     # Prediction lineage
